@@ -1,0 +1,242 @@
+clc;
+clear;
+close all;
+
+%% Problem Definition
+
+
+CostFunction=@(x) Fit(x);        % Cost Function
+NPEV=110;
+T=24;
+
+nVar=T+2;             % Number of Decision Variables
+
+VarSize=[1 nVar];   % Size of Decision Variables Matrix
+
+VarMin=[0    0   ones(1,T)*-0.4];         % Lower Bound of Variables
+VarMax=[1    1   ones(1,T)*0.4];         % Upper Bound of Variables
+
+
+%% PSO Parameters
+
+MaxIt=1000;      % Maximum Number of Iterations
+
+nPop=50*nVar;        % Population Size (Swarm Size)
+
+w=0.9;            % Inertia Weight
+c1=2;           % Personal Learning Coefficient
+c2=2;           % Global Learning Coefficient
+
+
+
+% Velocity Limits
+VelMax=0.1*(VarMax-VarMin);
+VelMin=-VelMax;
+N_Monte_Carlo=2000;
+
+for kkk=1:N_Monte_Carlo
+
+        Monte_Carlo;
+        
+        savefile = 'EV_param.mat';
+        save(savefile,'SOC_initial','Z_TD','Z_DT','Z_CT','Z_PP','Z_In','Z_Out','Z_Rtn','Z_S')
+        
+        SSOC_initial(kkk,:)= SOC_initial;
+        
+        ZZ_TD(kkk,:)=Z_TD;
+        ZZ_DT(kkk,:)=Z_DT;
+        ZZ_CT(kkk,:)=Z_CT;
+        ZZ_PP(kkk,:)=Z_PP;
+        ZZ_In(kkk,:)=Z_In;
+        ZZ_Out(kkk,:)=Z_Out;
+        ZZ_Rtn(kkk,:)=Z_Rtn;
+        ZZ_S(kkk,:)=Z_S;
+        
+        
+        
+        
+
+        %% Initialization
+
+        empty_particle.Position=[];
+        empty_particle.Cost=[];
+        empty_particle.Velocity=[];
+        empty_particle.P_RES=[];
+        empty_particle.P_ADM=[];
+        empty_particle.After_Total_loads=[];
+        empty_particle.SOC_EVs=[];
+
+        empty_particle.Best.Position=[];
+        empty_particle.Best.Cost=[];
+        empty_particle.Best.P_RES=[];
+        empty_particle.Best.P_ADM=[];
+        empty_particle.Best.After_Total_loads=[];
+        empty_particle.Best.SOC_EVs=[];
+
+
+
+        particle=repmat(empty_particle,nPop,1);
+
+        GlobalBest.Cost=inf;
+
+        for i=1:nPop
+
+            % Initialize Position
+            particle(i).Position=VarMin+rand(VarSize).*(VarMax-VarMin);
+
+            % Initialize Velocity
+            particle(i).Velocity=zeros(VarSize);
+
+            % Evaluation
+            [particle(i).Cost  particle(i).Position   particle(i).P_RES  particle(i).P_ADM  particle(i).After_Total_loads particle(i).SOC_EVs]=CostFunction(particle(i).Position);
+
+
+            % Update Personal Best
+            particle(i).Best=particle(i);
+
+            % Update Global Best
+            if particle(i).Best.Cost<GlobalBest.Cost
+
+                GlobalBest=particle(i).Best;
+
+            end
+
+        end
+
+        BestCost=zeros(MaxIt,1);
+
+
+        %% PSO Main Loop
+
+        for it=1:MaxIt
+
+            for i=1:nPop
+
+                % Update Velocity
+                particle(i).Velocity = w*particle(i).Velocity ...
+                    +c1*rand(VarSize).*(particle(i).Best.Position-particle(i).Position) ...
+                    +c2*rand(VarSize).*(GlobalBest.Position-particle(i).Position);
+
+                % Apply Velocity Limits
+                particle(i).Velocity = max(particle(i).Velocity,VelMin);
+                particle(i).Velocity = min(particle(i).Velocity,VelMax);
+
+                % Update Position
+                particle(i).Position = particle(i).Position + particle(i).Velocity;
+
+                % Velocity Mirror Effect
+                IsOutside=(particle(i).Position<VarMin | particle(i).Position>VarMax);
+                particle(i).Velocity(IsOutside)=-particle(i).Velocity(IsOutside);
+
+                % Apply Position Limits
+                particle(i).Position = max(particle(i).Position,VarMin);
+                particle(i).Position = min(particle(i).Position,VarMax);
+
+                % Evaluation
+               [particle(i).Cost particle(i).Position   particle(i).P_RES  particle(i).P_ADM  particle(i).After_Total_loads particle(i).SOC_EVs]=CostFunction(particle(i).Position);
+
+                % Update Personal Best
+                if particle(i).Cost<particle(i).Best.Cost
+
+                    particle(i).Best=particle(i);
+
+                    % Update Global Best
+                    if particle(i).Best.Cost<GlobalBest.Cost
+
+                        GlobalBest=particle(i).Best;
+
+                    end
+
+                end
+
+            end
+
+            BestCost(it)=GlobalBest.Cost;
+            
+            clc
+            Number_Iteration_Monte_carlo=kkk
+
+
+            disp(['Number_Iteration_PSO '  num2str(it) ', Best Cost = ' num2str(BestCost(it))]);
+
+
+        end
+        
+       P_ex(kkk,:)=GlobalBest.Position;
+       After_Total_loads_ex(kkk,:)=GlobalBest.After_Total_loads;
+       SOC_EVs_ex(kkk,:)=GlobalBest.SOC_EVs;
+       P_RES_ex(kkk,:)=GlobalBest.P_RES;
+       P_ADM_ex(kkk,:)=GlobalBest.P_ADM;
+       
+
+
+        
+end 
+
+P_monte_carlo=(sum(P_ex))/N_Monte_Carlo;
+
+Xp=P_monte_carlo(1)
+Xop=P_monte_carlo(2)
+After_Total_loads_monte_carlo=(sum(After_Total_loads_ex))/N_Monte_Carlo;
+SOC_EVs_monte_carlo=(sum(SOC_EVs_ex))/N_Monte_Carlo;
+P_RES_monte_carlo=(sum(P_RES_ex))/N_Monte_Carlo;
+P_ADM_monte_carlo=(sum(P_ADM_ex))/N_Monte_Carlo;
+
+
+%% Results
+
+        figure(1);
+        plot(BestCost,'LineWidth',2);
+        xlabel('Iteration');
+        ylabel('Best Cost');
+
+
+        Total_loads=[1900 1850 1825 1775 1800 1975 2200 2600 2900 3025 3050 3000 ...
+                      2850 2800 2750 2700 2750 2800 2925 3000 2925 2750 2400 2150];
+
+        
+
+        u=0;
+        for k=1:110
+            SOC(k,1)=0.4;
+            SOC(k,2:T+1)=SOC_EVs_monte_carlo(1,(u*T)+1:(u+1)*T);
+            u=u+1;
+        end
+
+
+
+        figure(2);
+        plot(Total_loads,'-O','LineWidth',2);
+        hold on
+        plot(After_Total_loads_monte_carlo,'-Or','LineWidth',2);
+        grid
+        xlim([1 24])
+        title('Load profile')
+        xlabel('Time (Hour)')
+        ylabel('System Load (kW)')
+        legend('Initial','After determine optimal EVs CH@DCH pattern')
+
+        figure(3);
+        plot(P_RES_monte_carlo,'-O','LineWidth',2);
+        hold on
+        plot(P_ADM_monte_carlo,'-Or','LineWidth',2);
+        grid
+        xlim([1 24])
+        title('The load and generation characteristics of EV parking ')
+        xlabel('Time (Hour)')
+        ylabel('Expected power flow (kW)')
+        legend('Residential EVP','Administrative EVP')
+
+        figure(4);
+        for i=1:NPEV
+            soc=SOC(i,2:25)*100;
+            plot(soc);
+            hold on
+        end
+        xlim([1 24])    
+        title('The SOC of EVs During 24 Hours')
+        xlabel('Time (Hour)')
+        ylabel('%SOC')
+        
+        
+
